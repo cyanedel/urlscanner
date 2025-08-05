@@ -1,5 +1,6 @@
 import configparser
 import os
+import sys
 import argparse
 from seleniumwire import webdriver
 from urllib.parse import urlparse
@@ -11,7 +12,7 @@ def get_base_domain(netloc):
 
 def scan_website(args):
   target_url = args.url
-  output_path = os.path.join(args.config['Output']['raw_dir'],args.output)
+  output_path = os.path.join(args.config['OUTPUT']['raw_dir'],args.output)
   level = args.level
   # Set browser options (headless optional)
   options = webdriver.ChromeOptions()
@@ -45,7 +46,7 @@ def scan_website(args):
           urls.add(domain)
 
   if output_path:
-    dir_path = args.config['Output']['raw_dir']
+    dir_path = args.config['OUTPUT']['raw_dir']
 
     if not os.path.isdir(dir_path):
       os.makedirs(dir_path)
@@ -66,8 +67,8 @@ def scan_website(args):
 
 def aggregate_files(args):
   all_urls = set()
-  input_dir = args.config['Output']['raw_dir']
-  output_file = args.config['Output']['aggr_file']
+  input_dir = args.config['OUTPUT']['raw_dir']
+  output_file = args.config['OUTPUT']['aggr_file']
 
   for filename in os.listdir(input_dir):
     filepath = os.path.join(input_dir, filename)
@@ -84,10 +85,18 @@ def aggregate_files(args):
 
   print(f"Aggregated {len(all_urls)} unique URLs into {output_file}")
 
-def load_config():
+def get_config_path(filename):
+  if getattr(sys, 'frozen', False):
+    # PyInstaller executable
+    application_path = os.path.dirname(sys.executable)
+  else:
+    # regular Python script
+    application_path = os.path.dirname(os.path.abspath(__file__))
+  
+  return os.path.join(application_path, filename)
+
+def load_config(config_file_path):
   config = configparser.ConfigParser()
-  script_dir = os.path.dirname(__file__)
-  config_file_path = os.path.join(script_dir, 'config.ini')
   files_read = config.read(config_file_path)
 
   if not files_read:
@@ -99,7 +108,28 @@ def load_config():
 
   return config
 
+def generate_config(config_file_path):
+  config = configparser.ConfigParser()
+  config['OUTPUT'] = {
+      'raw_dir': 'collection',
+      'aggr_file': 'aggregated.txt'
+  }
+
+  with open(config_file_path, 'w') as configfile:
+    config.write(configfile)
+  print(f"Created a default config.ini at: {config_file_path}")
+
 if __name__ == "__main__":
+  # config checking and generation
+  config_file_path = get_config_path('config.ini')
+  if not os.path.exists(config_file_path):
+    generate_config(config_file_path)
+
+  try:
+    config = load_config(config_file_path)
+  except Exception as e:
+    print(f"Failed to read config.ini at {config_file_path}: {e}")
+
   parser = argparse.ArgumentParser(description="Tool to scan domains or URLs loaded by a website")
   subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
@@ -113,7 +143,6 @@ if __name__ == "__main__":
   aggr.set_defaults(func=aggregate_files)
 
   args = parser.parse_args()
-  config = load_config()
   setattr(args, 'config', config)
 
   if hasattr(args, 'func'):
